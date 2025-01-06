@@ -1,0 +1,46 @@
+---
+- name: Create a folder
+  ansible.builtin.file:
+    path:  "{{ run_dir }}"
+    state: directory
+
+- name: Download the latest runner package
+  ansible.builtin.get_url:
+    url: https://github.com/actions/runner/releases/download/v2.321.0/actions-runner-linux-arm64-2.321.0.tar.gz
+    dest: "{{run_dir}}/actions-runner-linux-arm64-2.321.0.tar.gz"
+    owner: "{{ ansible_user }}"
+    mode: "0774"
+    checksum: sha256:{{ checksum }}
+ 
+- name: Extract the installer
+  ansible.builtin.unarchive:
+    src: "{{run_dir}}/actions-runner-linux-arm64-2.321.0.tar.gz"
+    dest: "{{ run_dir }}"
+    owner: "{{ ansible_user }}"
+    remote_src: yes
+
+- name: Create the runner and start the configuration experience
+  ansible.builtin.command: 
+    "./config.sh \
+     --url {{ url }} \
+     --token {{ token }} \
+     --name {{lookup('community.general.random_pet')}} \
+     --unattended "
+  args:
+    chdir: "{{ run_dir }}"
+  become: no
+
+- name: install service
+  ansible.builtin.command: 
+    "./svc.sh install "
+  args:
+    chdir: "{{ run_dir }}"
+  tags: service
+  
+- name: start service
+  ansible.builtin.command: 
+    "./svc.sh start "
+  args:
+    chdir: "{{ run_dir }}"
+  tags: service2
+
