@@ -1,0 +1,8 @@
+---
+- name: "Create self-hosted GitHub runners"
+  hosts: runners
+  become: true
+  vars:
+    run_dir: '{{ "runner/"+(url | regex_replace(".*/", "")) }}'
+  roles:
+  - runner
