@@ -1,0 +1,35 @@
+---
+- name: User creation
+  ansible.builtin.user:
+    name: "{{ new_admin }}"
+    create_home: yes
+    shell: /bin/bash
+    groups: admin,sudo
+    append: yes
+    state: present
+    password: "{{admin_pwd | password_hash('sha512')}}"
+  tags:
+    - user
+
+- name: Set authorized key 
+  ansible.posix.authorized_key:
+    user: "{{ new_admin }}"
+    state: present
+    key: " {{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+  tags:
+    - user
+
+- name: ensure setfacl is install (prevent error when user change)
+  ansible.builtin.apt:
+    name: acl
+    state: present
+  tags:
+    - user
+
+- name: Remove default admin
+  ansible.builtin.user:
+    name: "{{ default_admin }}"
+    state: absent
+    force: true
+  become: true
+  remote_user: "{{new_admin}}"
