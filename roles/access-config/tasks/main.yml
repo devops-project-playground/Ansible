@@ -1,0 +1,13 @@
+---
+- name: Copy sshd_config file
+  ansible.builtin.copy:
+    src: .
+    dest: /etc/ssh/
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: restart ssh.service
+  ansible.builtin.service:
+    name: ssh
+    state: reloaded

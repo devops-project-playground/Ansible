@@ -1,3 +1,6 @@
 .env
 secret*
 group_vars*
+roles/access-config/files*
+
+
