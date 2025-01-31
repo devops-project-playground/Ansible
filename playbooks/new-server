@@ -2,7 +2,6 @@
 - name: "Setup new Server (admin / ssh)"
   hosts: new
   become: true
-  gather_facts: no
   roles:
   - role: update
     remote_user: "{{ default_admin }}"
@@ -16,3 +15,4 @@
       ansible_become_pass: "{{ admin_pwd }}"
     tags:
       - access
+
