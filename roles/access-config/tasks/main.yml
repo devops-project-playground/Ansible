@@ -6,8 +6,41 @@
     owner: root
     group: root
     mode: '0644'
+  tags:
+    - ssh
 
 - name: restart ssh.service
   ansible.builtin.service:
     name: ssh
     state: reloaded
+    tags:
+    - ssh
+
+- name: Allow related and established connections
+  ansible.builtin.iptables:
+    chain: INPUT
+    ctstate: ESTABLISHED,RELATED
+    jump: ACCEPT
+    comment: Allow related and established connections
+  become: yes
+  tags:
+    - iptable
+
+- name: Allow ssh
+  ansible.builtin.iptables:
+    chain: INPUT
+    action: insert
+    protocol: tcp
+    destination_port: 22
+    jump: ACCEPT
+    comment: Allow SSH connections and jump
+  tags:
+    - iptable
+
+- name: Set Default INPUT Policy to DROP
+  ansible.builtin.iptables:
+    chain: INPUT
+    policy: DROP
+  tags:
+    - iptable
+
