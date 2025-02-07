@@ -1,0 +1,9 @@
+---
+- name: Setup Vaultwarden
+  hosts: test
+  roles:
+    - update
+    - certbot
+    - podman
+    - vaultwarden
+
