@@ -1,0 +1,23 @@
+---
+- name: Install podman
+  ansible.builtin.apt:
+    name: podman
+    state: present
+  become: true
+
+- name: Add docker.io to registries
+  ansible.builtin.lineinfile:
+    path: /etc/containers/registries.conf
+    regex: '^# unqualified-search-registries'
+    line: 'unqualified-search-registries = ["docker.io"]'
+  become: true
+  tags: 
+    - registrie
+
+- name: enable linger for podman services
+  ansible.builtin.command:
+    cmd: "loginctl enable-linger {{ ansible_user }}"
+    creates: "/var/lib/systemd/linger/{{ ansible_user }}"
+  become: true
+
+

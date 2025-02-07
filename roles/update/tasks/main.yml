@@ -2,8 +2,10 @@
 - name: "apt update equivalent "
   ansible.builtin.apt:
     update_cache: yes
+  become: true
   tags: update
 
 - name: "apt upgrade equivalent"
   ansible.builtin.apt:
     upgrade: dist
+  become: true
