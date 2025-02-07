@@ -9,7 +9,6 @@
   tags:
     - ssh
 
-
 - name: restart ssh.service
   ansible.builtin.service:
     name: ssh
@@ -45,3 +44,4 @@
     policy: DROP
   tags:
     - iptable
+
