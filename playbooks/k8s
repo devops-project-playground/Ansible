@@ -1,0 +1,6 @@
+---
+- name: install k8s
+  hosts: new
+  roles:
+    - update
+    - k8s
