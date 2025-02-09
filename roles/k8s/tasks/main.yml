@@ -1,0 +1,69 @@
+---
+- name: Install needed packages
+  ansible.builtin.apt:
+    pkg:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gpg
+  become: true
+
+- name: Download public signing key
+  ansible.builtin.shell:
+    cmd: "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg"
+    creates: "/etc/apt/keyrings/kubernetes-apt-keyring.gpg"
+  become: true
+
+- name: Add repository 
+  ansible.builtin.lineinfile:
+    path: "/etc/apt/sources.list.d/kubernetes.list"
+    line: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /"
+    create: yes
+  become: true
+
+- name: Update repository
+  ansible.builtin.apt:
+    update_cache: true
+  become: true
+
+- name: Install kubelet on every node
+  ansible.builtin.apt:
+    name: kubelet
+    state: present
+  become: true
+
+- name: Hold kubelet
+  ansible.builtin.dpkg_selections:
+    name: kubelet
+    selection: hold
+  become: true
+
+- name: Install kubectl and kubeadmin on main
+  ansible.builtin.apt:
+    pkg:
+      - kubeadm
+      - kubectl
+    state: present
+  when: ansible_hostname == "main"
+  become: true
+      
+- name: Hold kubeadm
+  ansible.builtin.dpkg_selections:
+    name: kubeadm
+    selection: hold
+  when: ansible_hostname == "main"
+  become: true
+
+- name: Hold kubectl
+  ansible.builtin.dpkg_selections:
+    name: kubectl
+    selection: hold
+  when: ansible_hostname == "main"
+  become: true
+
+- name: Enable kubelet
+  ansible.builtin.systemd_service:
+    name: kubelet
+    enabled: true
+  become: true
+  become: true
