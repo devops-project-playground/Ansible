@@ -1,35 +1,68 @@
 ---
-- name: Install needed packages
+- name: Install needed packages (K8S and CRI-O)
   ansible.builtin.apt:
     pkg:
       - apt-transport-https
+      - software-properties-common
       - ca-certificates
       - curl
       - gpg
   become: true
 
-- name: Download public signing key
+- name: Download public signing key K8S
   ansible.builtin.shell:
     cmd: "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg"
     creates: "/etc/apt/keyrings/kubernetes-apt-keyring.gpg"
   become: true
 
-- name: Add repository 
+- name: Add repository K8S 
   ansible.builtin.lineinfile:
     path: "/etc/apt/sources.list.d/kubernetes.list"
     line: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /"
     create: yes
   become: true
+  
+- name: Download public signing key CRI-O
+  ansible.builtin.shell:
+    cmd: "curl -fsSL https://pkgs.k8s.io/addons:/cri-o:/stable:/v1.32/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg"
+    creates: "/etc/apt/keyrings/cri-o-apt-keyring.gpg"
+  become: true
+  tags:
+    - crio
+
+- name: Add repository CRI-O
+  ansible.builtin.lineinfile:
+    path: "/etc/apt/sources.list.d/cri-o.list"
+    line: "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://pkgs.k8s.io/addons:/cri-o:/stable:/v1.32/deb/ /"
+    create: yes
+  become: true
+  tags:
+    - crio
 
 - name: Update repository
   ansible.builtin.apt:
     update_cache: true
   become: true
+  tags:
+    - crio
 
 - name: Install kubelet on every node
   ansible.builtin.apt:
     name: kubelet
     state: present
+  become: true
+
+- name: Install CRI-O packages
+  ansible.builtin.apt:
+    name: "cri-o"
+    state: present
+  become: true
+
+- name: Start and Enable CRI-O service
+  ansible.builtin.systemd_service:
+    name: crio.service
+    state: started
+    enabled: true
   become: true
 
 - name: Hold kubelet
