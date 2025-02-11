@@ -1,4 +1,5 @@
 ---
+
 - name: Install needed packages (K8S and CRI-O)
   ansible.builtin.apt:
     pkg:
@@ -9,11 +10,13 @@
       - gpg
   become: true
 
+
 - name: Download public signing key K8S
   ansible.builtin.shell:
     cmd: "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg"
     creates: "/etc/apt/keyrings/kubernetes-apt-keyring.gpg"
   become: true
+
 
 - name: Add repository K8S 
   ansible.builtin.lineinfile:
@@ -46,11 +49,13 @@
   tags:
     - crio
 
+
 - name: Install kubelet on every node
   ansible.builtin.apt:
     name: kubelet
     state: present
   become: true
+
 
 - name: Install CRI-O packages
   ansible.builtin.apt:
@@ -267,4 +272,3 @@
   when: ansible_hostname != "main"
   become: true
   tags: kubeadm
-  
