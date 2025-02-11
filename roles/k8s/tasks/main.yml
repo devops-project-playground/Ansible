@@ -1,36 +1,82 @@
 ---
-- name: Install needed packages
+
+- name: Install needed packages (K8S and CRI-O)
   ansible.builtin.apt:
     pkg:
       - apt-transport-https
+      - software-properties-common
       - ca-certificates
       - curl
       - gpg
   become: true
 
-- name: Download public signing key
+
+- name: Download public signing key K8S
   ansible.builtin.shell:
     cmd: "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg"
     creates: "/etc/apt/keyrings/kubernetes-apt-keyring.gpg"
   become: true
 
-- name: Add repository 
+
+- name: Add repository K8S 
   ansible.builtin.lineinfile:
     path: "/etc/apt/sources.list.d/kubernetes.list"
     line: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /"
     create: yes
   become: true
+  
+- name: Download public signing key CRI-O
+  ansible.builtin.shell:
+    cmd: "curl -fsSL https://pkgs.k8s.io/addons:/cri-o:/stable:/v1.32/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg"
+    creates: "/etc/apt/keyrings/cri-o-apt-keyring.gpg"
+  become: true
+  tags:
+    - crio
+
+- name: Add repository CRI-O
+  ansible.builtin.lineinfile:
+    path: "/etc/apt/sources.list.d/cri-o.list"
+    line: "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://pkgs.k8s.io/addons:/cri-o:/stable:/v1.32/deb/ /"
+    create: yes
+  become: true
+  tags:
+    - crio
 
 - name: Update repository
   ansible.builtin.apt:
     update_cache: true
   become: true
+  tags:
+    - crio
+
 
 - name: Install kubelet on every node
   ansible.builtin.apt:
     name: kubelet
     state: present
   become: true
+
+
+- name: Install CRI-O packages
+  ansible.builtin.apt:
+    name: "cri-o"
+    state: present
+  become: true
+
+# PATH MIGHT CHANGE IN THE FUTUR !!!
+- name: Set Cgroup to cgroupf
+  ansible.builtin.blockinfile:
+    path: /etc/crio/crio.conf.d/10-crio.conf
+    insertafter: "^\\[crio.runtime\\]\\n"
+    block: |
+      conmon_cgroup = "pod"
+      cgroup_manager = "cgroupfs"
+  become: true
+  notify:
+    - Start and Enable CRI-O service
+
+- name: Ensure service is running
+  ansible.builtin.meta: flush_handlers
 
 - name: Hold kubelet
   ansible.builtin.dpkg_selections:
@@ -44,26 +90,185 @@
       - kubeadm
       - kubectl
     state: present
-  when: ansible_hostname == "main"
   become: true
       
 - name: Hold kubeadm
   ansible.builtin.dpkg_selections:
     name: kubeadm
     selection: hold
-  when: ansible_hostname == "main"
   become: true
 
 - name: Hold kubectl
   ansible.builtin.dpkg_selections:
     name: kubectl
     selection: hold
-  when: ansible_hostname == "main"
   become: true
 
-- name: Enable kubelet
+
+  # Handle ports for control plane : 6443 / 2379-2380 / 10250 / 10259 / 10257
+- name: Allow connections on ports Control
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: tcp
+    source: "{{ subnet }}"
+    action: insert
+    destination_ports:
+      - "6443"
+      - "2379:2380"
+      - "10250"
+      - "10259"
+      - "10256"
+    jump: ACCEPT
+    state: present
+  when: ansible_hostname == "main"
+  become: true
+  tags:
+    - ports
+
+  # Handle ports for worker node(s): 10250 / 10256 / 30000-32767
+- name: Allow connections on ports NODES
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: tcp
+    source: "{{ subnet }}"
+    action: insert
+    destination_ports:
+      - "10250"
+      - "10256"
+      - "30000:32767"
+    jump: ACCEPT
+    state: present
+  when: ansible_hostname != "main"
+  become: true
+  tags:
+    - ports
+
+- name: Enable IP forwarding
+  ansible.builtin.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    state: present
+    reload: true
+  become: true
+
+- name: Insure git is present
+  ansible.builtin.apt:
+    name: git
+    state: present
+  become: true
+
+- name: Create CNI plugins dir
+  ansible.builtin.file:
+    path: /home/{{ ansible_user }}/CNI-plugins
+    state: directory
+
+- name: Clone CNI plugins repo
+  ansible.builtin.git:
+    repo: "https://github.com/containernetworking/plugins"
+    dest: /home/{{ ansible_user }}/CNI-plugins
+    clone: yes
+
+- name: Checkout to last version
+  ansible.builtin.shell:
+    cmd: git checkout $(git tag -l | sort -V | tail -n 1)
+    chdir: /home/{{ ansible_user }}/CNI-plugins
+
+- name: Download Golang tar
+  ansible.builtin.get_url:
+    url: "https://go.dev/dl/go1.23.6.linux-arm64.tar.gz"
+    dest: /home/{{ ansible_user }}/go1.23.6.linux-arm64.tar.gz
+    mode: 770
+
+- name: Install Golang
+  ansible.builtin.shell:
+    cmd: "rm -rf /usr/local/go && tar -C /usr/local -xzf go1.23.6.linux-arm64.tar.gz"
+    creates: /usr/local/go
+  become: true
+    
+- name: Ensure /go/bin is in PATH
+  ansible.builtin.lineinfile:
+    path: /etc/profile
+    line: 'export PATH="/usr/local/go/bin:$PATH"'
+    create: yes
+    state: present
+  become: true
+
+- name: Create symlink in for go in /usr/local/bin
+  ansible.builtin.file:
+    src: /usr/local/go/bin/go
+    dest: /usr/local/bin/go
+    state: link
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+  become: true
+ 
+- name: Build CNI plugins
+  ansible.builtin.shell:
+    chdir: "/home/{{ ansible_user }}/CNI-plugins"
+    cmd: /bin/bash -c "./build_linux.sh"
+    creates: /home/{{ ansible_user }}/CNI-plugins/bin/bridge
+
+- name: Create CNI bin directory
+  ansible.builtin.file:
+    path: /opt/cni/bin
+    state: directory
+  become: true
+
+- name: Copy CNI plugins binaries 
+  ansible.builtin.copy:
+    src: /home/{{ ansible_user }}/CNI-plugins/bin/
+    remote_src: true
+    dest: /opt/cni/bin/
+  become: true
+
+- name: Kubeadm init
+  ansible.builtin.command: kubeadm init 
+  args:
+    creates: "/etc/kubernetes/admin.conf"
+  when: ansible_hostname == "main"
+  become: true
+  tags: kubeadm
+    
+- name: Create .kube dir
+  ansible.builtin.file:
+    path: /home/{{ ansible_user }}/.kube
+    state: directory
+  when: ansible_hostname == "main"
+  become: true
+  tags: kubeadm
+
+- name: Create kube config
+  ansible.builtin.copy:
+    remote_src: true
+    src: /etc/kubernetes/admin.conf
+    dest: /home/{{ ansible_user }}/.kube/config
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+  when: ansible_hostname == "main"
+  become: true
+  tags: kubeadm
+  
+- name: Enable and Start kubelet
   ansible.builtin.systemd_service:
     name: kubelet
+    state: started
     enabled: true
   become: true
+  tags: kubeadm
+  
+- name: Get Control token
+  ansible.builtin.command: kubeadm token create --print-join-command
+  register: join_command
+  changed_when: false
+  run_once: true
+  when: ansible_hostname == "main"
   become: true
+  tags: kubeadm
+
+- name: Join worker nodes to the cluster
+  ansible.builtin.command: "{{ join_command.stdout }}"
+  args:
+    creates: /etc/kubernetes/kubelet.conf
+  when: ansible_hostname != "main"
+  become: true
+  tags: kubeadm
