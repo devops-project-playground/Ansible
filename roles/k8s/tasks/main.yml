@@ -175,13 +175,13 @@
 
 - name: Download Golang tar
   ansible.builtin.get_url:
-    url: "https://go.dev/dl/go1.23.6.linux-arm64.tar.gz"
-    dest: /home/{{ ansible_user }}/go1.23.6.linux-arm64.tar.gz
+    url: "https://go.dev/dl/go1.23.6.linux-{{ [ansible_architecture] }}.tar.gz"
+    dest: /home/{{ ansible_user }}/go1.23.6.linux-{{ [ansible_architecture] }}.tar.gz
     mode: 770
 
 - name: Install Golang
   ansible.builtin.shell:
-    cmd: "rm -rf /usr/local/go && tar -C /usr/local -xzf go1.23.6.linux-arm64.tar.gz"
+    cmd: "rm -rf /usr/local/go && tar -C /usr/local -xzf go1.23.6.linux-{{ [ansible_architecture] }}.tar.gz"
     creates: /usr/local/go
   become: true
     

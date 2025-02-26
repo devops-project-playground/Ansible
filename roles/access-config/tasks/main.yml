@@ -13,8 +13,7 @@
   ansible.builtin.service:
     name: ssh
     state: reloaded
-
-    tags:
+  tags:
     - ssh
 
 - name: Allow related and established connections

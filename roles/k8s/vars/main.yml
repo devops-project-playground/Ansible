@@ -1,0 +1,4 @@
+---
+x86x64: "amd64"
+aarch64: "arm64"
+arm64: "arm64"
