@@ -1,0 +1,8 @@
+---
+- name: Remove default admin
+  ansible.builtin.user:
+    name: "{{ default_admin }}"
+    state: absent
+    force: true
+  tags:
+    - remove

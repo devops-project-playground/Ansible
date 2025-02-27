@@ -16,8 +16,8 @@
 
 - name: enable linger for podman services
   ansible.builtin.command:
-    cmd: "loginctl enable-linger {{ ansible_user }}"
-    creates: "/var/lib/systemd/linger/{{ ansible_user }}"
+    cmd: "loginctl enable-linger {{ ansible_remote_user }}"
+    creates: "/var/lib/systemd/linger/{{ ansible_remote_user }}"
   become: true
 
 

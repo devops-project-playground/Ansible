@@ -2,17 +2,25 @@
 - name: "Setup new Server (admin / ssh)"
   hosts: new
   become: true
+  gather_facts: no
 
   roles:
   - role: update
     remote_user: "{{ default_admin }}"
-  - role: set-admin
+    vars: 
+      ansible_ssh_pass: "{{ default_pass }}"
+      ansible_become_pass: "{{ default_pass}}"
+  - role: create-admin
     remote_user: "{{ default_admin }}"
     vars: 
-     ansible_become_pass: "{{ admin_pwd }}"
+      ansible_ssh_pass: "{{ default_pass }}"
+      ansible_become_pass: "{{ default_pass }}"
+  - role: delete-default-admin
+    remote_user: "{{ new_admin }}"
+    vars: 
+      ansible_become_pass: "{{ admin_pwd }}"
   - role: access-config
     remote_user: "{{ new_admin }}"
     vars: 
       ansible_become_pass: "{{ admin_pwd }}"
-    tags:
 
