@@ -104,7 +104,6 @@
     selection: hold
   become: true
 
-
   # Handle ports for control plane : 6443 / 2379-2380 / 10250 / 10259 / 10257
 - name: Allow connections on ports Control
   ansible.builtin.iptables:
@@ -118,12 +117,26 @@
       - "10250"
       - "10259"
       - "10256"
+      - "10257"
+      - "10251"
+      - "8080"
     jump: ACCEPT
     state: present
   when: "'main' in group_names"
   become: true
   tags:
     - ports
+
+- name: Allow localhost traffic
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: all
+    source: 127.0.0.1
+    destination: 127.0.0.1
+    jump: ACCEPT
+  become: true
+  tags:
+  - iptable
 
   # Handle ports for worker node(s): 10250 / 10256 / 30000-32767
 - name: Allow connections on ports NODES
@@ -136,6 +149,7 @@
       - "10250"
       - "10256"
       - "30000:32767"
+      - "8080"
     jump: ACCEPT
     state: present
   when: "'workers' in group_names"
@@ -283,3 +297,4 @@
   when: "'workers' in group_names"
   become: true
   tags: kubeadm
+
