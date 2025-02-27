@@ -120,7 +120,7 @@
       - "10256"
     jump: ACCEPT
     state: present
-  when: ansible_hostname == "main"
+  when: "'main' in group_names"
   become: true
   tags:
     - ports
@@ -138,7 +138,7 @@
       - "30000:32767"
     jump: ACCEPT
     state: present
-  when: ansible_hostname != "main"
+  when: "'workers' in group_names"
   become: true
   tags:
     - ports
@@ -159,29 +159,40 @@
 
 - name: Create CNI plugins dir
   ansible.builtin.file:
-    path: /home/{{ ansible_user }}/CNI-plugins
+    path: /home/{{ ansible_remote_user }}/CNI-plugins
     state: directory
 
 - name: Clone CNI plugins repo
   ansible.builtin.git:
     repo: "https://github.com/containernetworking/plugins"
-    dest: /home/{{ ansible_user }}/CNI-plugins
+    dest: /home/{{ ansible_remote_user }}/CNI-plugins
     clone: yes
 
 - name: Checkout to last version
   ansible.builtin.shell:
     cmd: git checkout $(git tag -l | sort -V | tail -n 1)
-    chdir: /home/{{ ansible_user }}/CNI-plugins
+    chdir: /home/{{ ansible_remote_user }}/CNI-plugins
 
+- name: Define architecture mapping
+  ansible.builtin.set_fact:
+    arch_mapping:
+      x86_64: "amd64"
+      aarch64: "arm64"
+      arm64: "arm64"
+
+- name: Def architecture
+  ansible.builtin.set_fact:
+    go_arch: "{{ arch_mapping[ansible_architecture]}}"
+    
 - name: Download Golang tar
   ansible.builtin.get_url:
-    url: "https://go.dev/dl/go1.23.6.linux-{{ [ansible_architecture] }}.tar.gz"
-    dest: /home/{{ ansible_user }}/go1.23.6.linux-{{ [ansible_architecture] }}.tar.gz
+    url: "https://go.dev/dl/go1.23.6.linux-{{ go_arch }}.tar.gz"
+    dest: /home/{{ ansible_remote_user }}/go1.23.6.linux-{{ go_arch }}.tar.gz
     mode: 770
 
 - name: Install Golang
   ansible.builtin.shell:
-    cmd: "rm -rf /usr/local/go && tar -C /usr/local -xzf go1.23.6.linux-{{ [ansible_architecture] }}.tar.gz"
+    cmd: "rm -rf /usr/local/go && tar -C /usr/local -xzf go1.23.6.linux-{{ go_arch }}.tar.gz"
     creates: /usr/local/go
   become: true
     
@@ -198,15 +209,15 @@
     src: /usr/local/go/bin/go
     dest: /usr/local/bin/go
     state: link
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
+    owner: "{{ ansible_remote_user }}"
+    group: "{{ ansible_remote_user }}"
   become: true
  
 - name: Build CNI plugins
   ansible.builtin.shell:
-    chdir: "/home/{{ ansible_user }}/CNI-plugins"
+    chdir: "/home/{{ ansible_remote_user }}/CNI-plugins"
     cmd: /bin/bash -c "./build_linux.sh"
-    creates: /home/{{ ansible_user }}/CNI-plugins/bin/bridge
+    creates: /home/{{ ansible_remote_user }}/CNI-plugins/bin/bridge
 
 - name: Create CNI bin directory
   ansible.builtin.file:
@@ -216,7 +227,7 @@
 
 - name: Copy CNI plugins binaries 
   ansible.builtin.copy:
-    src: /home/{{ ansible_user }}/CNI-plugins/bin/
+    src: /home/{{ ansible_remote_user }}/CNI-plugins/bin/
     remote_src: true
     dest: /opt/cni/bin/
   become: true
@@ -225,15 +236,15 @@
   ansible.builtin.command: kubeadm init 
   args:
     creates: "/etc/kubernetes/admin.conf"
-  when: ansible_hostname == "main"
+  when: "'main' in group_names"
   become: true
   tags: kubeadm
     
 - name: Create .kube dir
   ansible.builtin.file:
-    path: /home/{{ ansible_user }}/.kube
+    path: /home/{{ ansible_remote_user }}/.kube
     state: directory
-  when: ansible_hostname == "main"
+  when: "'main' in group_names"
   become: true
   tags: kubeadm
 
@@ -241,10 +252,10 @@
   ansible.builtin.copy:
     remote_src: true
     src: /etc/kubernetes/admin.conf
-    dest: /home/{{ ansible_user }}/.kube/config
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
-  when: ansible_hostname == "main"
+    dest: /home/{{ ansible_remote_user }}/.kube/config
+    owner: "{{ ansible_remote_user }}"
+    group: "{{ ansible_remote_user }}"
+  when: "'main' in group_names"
   become: true
   tags: kubeadm
   
@@ -261,7 +272,7 @@
   register: join_command
   changed_when: false
   run_once: true
-  when: ansible_hostname == "main"
+  when: "'main' in group_names"
   become: true
   tags: kubeadm
 
@@ -269,6 +280,6 @@
   ansible.builtin.command: "{{ join_command.stdout }}"
   args:
     creates: /etc/kubernetes/kubelet.conf
-  when: ansible_hostname != "main"
+  when: "'workers' in group_names"
   become: true
   tags: kubeadm
