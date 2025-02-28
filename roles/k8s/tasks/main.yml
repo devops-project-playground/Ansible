@@ -297,4 +297,3 @@
   when: "'workers' in group_names"
   become: true
   tags: kubeadm
-

@@ -5,6 +5,7 @@
     - update
     - podman
     - k8s
+    - k9s
   vars:
     ansible_remote_user: "{{ new_admin }}"
     ansible_become_pass: "{{ admin_pwd }}"
