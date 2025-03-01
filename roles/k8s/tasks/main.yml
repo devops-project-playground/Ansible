@@ -84,7 +84,7 @@
     selection: hold
   become: true
 
-- name: Install kubectl and kubeadmin on main
+- name: Install kubectl and kubeadmin on control_plane
   ansible.builtin.apt:
     pkg:
       - kubeadm
@@ -122,7 +122,7 @@
       - "8080"
     jump: ACCEPT
     state: present
-  when: "'main' in group_names"
+  when: "'control_plane' in group_names"
   become: true
   tags:
     - ports
@@ -245,20 +245,26 @@
     remote_src: true
     dest: /opt/cni/bin/
   become: true
+  throttle: 3
 
 - name: Kubeadm init
-  ansible.builtin.command: kubeadm init 
+  ansible.builtin.command: kubeadm init --control-plane-endpoint {{ ip_add }} --upload-certs
+  register: init_std
   args:
     creates: "/etc/kubernetes/admin.conf"
-  when: "'main' in group_names"
+  vars:
+    ip_add: "{{  ansible_default_ipv4.address }}"
+  when: "'first_cp' in group_names"
   become: true
-  tags: kubeadm
+  run_once: true
+  tags: 
+    - kubeadm
     
 - name: Create .kube dir
   ansible.builtin.file:
     path: /home/{{ ansible_remote_user }}/.kube
     state: directory
-  when: "'main' in group_names"
+  when: "'first_cp' in group_names"
   become: true
   tags: kubeadm
 
@@ -269,7 +275,7 @@
     dest: /home/{{ ansible_remote_user }}/.kube/config
     owner: "{{ ansible_remote_user }}"
     group: "{{ ansible_remote_user }}"
-  when: "'main' in group_names"
+  when: "'first_cp' in group_names"
   become: true
   tags: kubeadm
   
@@ -280,13 +286,28 @@
     enabled: true
   become: true
   tags: kubeadm
-  
-- name: Get Control token
+
+- name: Join control-plane nodes to the cluster
+  ansible.builtin.command: "{{cp_join_command}} "
+  vars:
+    cp_join_command: "{{init_std.stdout 
+        | regex_search('kubeadm join(?:.*\\n){2}.*--control-plane.*[A-Za-z0-9]{64}', multiline=True) 
+        | regex_replace('\\\\', '')  
+        | regex_replace('\\s+', ' ')}}"
+  args:
+    creates: /etc/kubernetes/kubelet.conf
+  throttle: 1
+  when: "'control_plane' in group_names"
+  become: true
+  tags: 
+    - kubeadm
+
+- name: Get Worker join token
   ansible.builtin.command: kubeadm token create --print-join-command
   register: join_command
   changed_when: false
   run_once: true
-  when: "'main' in group_names"
+  when: "'first_cp' in group_names"
   become: true
   tags: kubeadm
 
@@ -297,3 +318,4 @@
   when: "'workers' in group_names"
   become: true
   tags: kubeadm
+
