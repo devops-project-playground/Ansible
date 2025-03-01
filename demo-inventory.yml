@@ -1,0 +1,26 @@
+---
+control_plane:
+  hosts:
+    <ip>:
+  vars:
+    admin_pwd: <new_admin_password>
+
+first_cp:
+  hosts:
+    <ip>:
+    
+workers:
+  hosts:
+    <ip>:
+  vars:
+    admin_pwd: <new_workers_passwordk>
+
+new:
+  children:
+    control_plane:
+    workers:
+  vars:
+    default_admin: <default_host_user>
+    default_pass: <default_host_password>
+    new_admin: <new_remote_user>
+    subnet: <subnet IP/CIDR ex:"0.0.0.0/24">
