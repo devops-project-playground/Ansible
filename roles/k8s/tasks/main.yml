@@ -1,5 +1,4 @@
 ---
-
 - name: Install needed packages (K8S and CRI-O)
   ansible.builtin.apt:
     pkg:
