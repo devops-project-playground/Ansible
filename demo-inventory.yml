@@ -1,3 +1,5 @@
+Gjkkjkj
+
 ---
 control_plane:
   hosts:
@@ -24,3 +26,6 @@ new:
     default_pass: <default_host_password>
     new_admin: <new_remote_user>
     subnet: <subnet IP/CIDR ex:"0.0.0.0/24">
+    k8s_subnet: <subnet IP/CIDR ex:"0.0.0.0/24">
+    vip: <virtual ip of k8s cluster ex:"0.0.0.0">
+
