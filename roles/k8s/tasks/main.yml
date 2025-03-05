@@ -7,9 +7,75 @@
       - ca-certificates
       - curl
       - gpg
+      - make
   become: true
 
+- name: Define architecture mapping
+  ansible.builtin.set_fact:
+    arch_mapping:
+      x86_64: "amd64"
+      aarch64: "arm64"
+      arm64: "arm64"
 
+- name: Def architecture
+  ansible.builtin.set_fact:
+    go_arch: "{{ arch_mapping[ansible_architecture]}}"
+    
+- name: Download Golang tar
+  ansible.builtin.get_url:
+    url: "https://go.dev/dl/go1.23.6.linux-{{ go_arch }}.tar.gz"
+    dest: /home/{{ ansible_remote_user }}/go1.23.6.linux-{{ go_arch }}.tar.gz
+    mode: 770
+
+- name: Install Golang
+  ansible.builtin.shell:
+    cmd: "rm -rf /usr/local/go && tar -C /usr/local -xzf go1.23.6.linux-{{ go_arch }}.tar.gz"
+    creates: /usr/local/go
+  become: true
+    
+- name: Ensure /go/bin is in PATH
+  ansible.builtin.lineinfile:
+    path: /etc/profile
+    line: 'export PATH="/usr/local/go/bin:$PATH"'
+    create: yes
+    state: present
+  become: true
+
+- name: Create symlink in for go in /usr/local/bin
+  ansible.builtin.file:
+    src: /usr/local/go/bin/go
+    dest: /usr/local/bin/go
+    state: link
+    owner: "{{ ansible_remote_user }}"
+    group: "{{ ansible_remote_user }}"
+  become: true
+ 
+- name: Create Helm directory
+  ansible.builtin.file:
+    path: /home/{{ ansible_remote_user }}/helm
+    state: directory
+
+- name: Clone Helm repo
+  ansible.builtin.git:
+    repo: "https://github.com/helm/helm.git"
+    dest: /home/{{ ansible_remote_user }}/helm
+    clone: yes
+
+- name: Make Helm
+  ansible.builtin.command:
+    cmd: make
+    chdir: "/home/{{ ansible_remote_user }}/helm" 
+    creates: "/home/{{ ansible_remote_user }}/helm/bin"
+
+- name: Create symlink in for Helm in /usr/local/bin
+  ansible.builtin.file:
+    src: /home/{{ ansible_remote_user }}/helm/bin/helm
+    dest: /usr/local/bin/helm
+    state: link
+    owner: "{{ ansible_remote_user }}"
+    group: "{{ ansible_remote_user }}"
+  become: true
+ 
 - name: Download public signing key K8S
   ansible.builtin.shell:
     cmd: "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg"
@@ -119,12 +185,38 @@
       - "10257"
       - "10251"
       - "8080"
+      - "179" # Calico
     jump: ACCEPT
     state: present
   when: "'control_plane' in group_names"
   become: true
   tags:
     - ports
+    
+- name: Allow connection UDP for Calico
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: udp
+    source: "{{subnet}}"
+    action: insert
+    destination_ports:
+      - "4789"
+    jump: ACCEPT
+    state: present
+  become: true
+  tags:
+    - ports
+
+- name: Allow localhost traffic
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: all
+    source: 127.0.0.1
+    destination: 127.0.0.1
+    jump: ACCEPT
+  become: true
+  tags:
+  - iptable
 
 - name: Allow localhost traffic
   ansible.builtin.iptables:
@@ -149,6 +241,7 @@
       - "10256"
       - "30000:32767"
       - "8080"
+      - "179" #Calico
     jump: ACCEPT
     state: present
   when: "'workers' in group_names"
@@ -186,46 +279,6 @@
     cmd: git checkout $(git tag -l | sort -V | tail -n 1)
     chdir: /home/{{ ansible_remote_user }}/CNI-plugins
 
-- name: Define architecture mapping
-  ansible.builtin.set_fact:
-    arch_mapping:
-      x86_64: "amd64"
-      aarch64: "arm64"
-      arm64: "arm64"
-
-- name: Def architecture
-  ansible.builtin.set_fact:
-    go_arch: "{{ arch_mapping[ansible_architecture]}}"
-    
-- name: Download Golang tar
-  ansible.builtin.get_url:
-    url: "https://go.dev/dl/go1.23.6.linux-{{ go_arch }}.tar.gz"
-    dest: /home/{{ ansible_remote_user }}/go1.23.6.linux-{{ go_arch }}.tar.gz
-    mode: 770
-
-- name: Install Golang
-  ansible.builtin.shell:
-    cmd: "rm -rf /usr/local/go && tar -C /usr/local -xzf go1.23.6.linux-{{ go_arch }}.tar.gz"
-    creates: /usr/local/go
-  become: true
-    
-- name: Ensure /go/bin is in PATH
-  ansible.builtin.lineinfile:
-    path: /etc/profile
-    line: 'export PATH="/usr/local/go/bin:$PATH"'
-    create: yes
-    state: present
-  become: true
-
-- name: Create symlink in for go in /usr/local/bin
-  ansible.builtin.file:
-    src: /usr/local/go/bin/go
-    dest: /usr/local/bin/go
-    state: link
-    owner: "{{ ansible_remote_user }}"
-    group: "{{ ansible_remote_user }}"
-  become: true
- 
 - name: Build CNI plugins
   ansible.builtin.shell:
     chdir: "/home/{{ ansible_remote_user }}/CNI-plugins"
@@ -247,7 +300,7 @@
   throttle: 3
 
 - name: Kubeadm init
-  ansible.builtin.command: kubeadm init --control-plane-endpoint {{ ip_add }} --upload-certs
+  ansible.builtin.command: kubeadm init --control-plane-endpoint {{ ip_add }} --upload-certs --pod-network-cidr={{ k8s_subnet }}
   register: init_std
   args:
     creates: "/etc/kubernetes/admin.conf"
@@ -318,3 +371,17 @@
   become: true
   tags: kubeadm
 
+- name: Deploy Calico
+  ansible.builtin.command:
+    cmd: "kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.2/manifests/calico.yaml "
+  when: "'first_cp' in group_names"
+  tags:
+    - Helm
+    - CNI
+
+- name: Deploy Nginx Ingress-Controller
+  ansible.builtin.shell:
+    cmd: "kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.12.0/deploy/static/provider/baremetal/deploy.yaml"
+  when: "'first_cp' in group_names"
+  tags:
+    - ingress
