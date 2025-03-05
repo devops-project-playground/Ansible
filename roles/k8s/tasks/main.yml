@@ -218,6 +218,17 @@
   tags:
   - iptable
 
+- name: Allow localhost traffic
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: all
+    source: 127.0.0.1
+    destination: 127.0.0.1
+    jump: ACCEPT
+  become: true
+  tags:
+  - iptable
+
   # Handle ports for worker node(s): 10250 / 10256 / 30000-32767
 - name: Allow connections on ports NODES
   ansible.builtin.iptables:
@@ -374,5 +385,3 @@
   when: "'first_cp' in group_names"
   tags:
     - ingress
-
-
