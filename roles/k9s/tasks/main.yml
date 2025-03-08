@@ -4,7 +4,7 @@
   ansible.builtin.file:
     path: /home/{{ ansible_remote_user }}/k9s
     state: directory
-  when: "'control_plane' in group_names"
+  when: "'bastion' in group_names"
   tags:
     - k9s
 
@@ -13,7 +13,7 @@
     repo: "https://github.com/derailed/k9s"
     dest: /home/{{ ansible_remote_user }}/k9s
     clone: yes
-  when: "'control_plane' in group_names"
+  when: "'bastion' in group_names"
   tags:
     - k9s
 
@@ -21,7 +21,7 @@
   ansible.builtin.shell:
     cmd: git checkout $(git tag -l | sort -V | tail -n 1)
     chdir: /home/{{ ansible_remote_user }}/k9s
-  when: "'control_plane' in group_names"
+  when: "'bastion' in group_names"
   tags:
     - k9s
 
@@ -36,7 +36,7 @@
     chdir: "/home/{{ ansible_remote_user }}/k9s"
     cmd: /bin/bash -c "make build"
     creates: /home/{{ ansible_remote_user }}/k9s/execs
-  when: "'control_plane' in group_names"
+  when: "'bastion' in group_names"
   tags:
     - k9s
 
@@ -48,7 +48,7 @@
     owner: "{{ ansible_remote_user }}"
     group: "{{ ansible_remote_user }}"
   become: true
-  when: "'control_plane' in group_names"
+  when: "'bastion' in group_names"
   tags:
     - k9s
 
@@ -59,7 +59,7 @@
     create: yes
     state: present
   become: true 
-  when: "'control_plane' in group_names"
+  when: "'bastion' in group_names"
   tags:
     - k9s 
 
