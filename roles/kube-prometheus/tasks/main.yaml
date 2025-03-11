@@ -1,0 +1,35 @@
+---
+- name: Ensure cluster dir is present
+  ansible.builtin.file:
+    name: /home/{{ ansible_remote_user }}/cluster
+    state: directory
+    owner: "{{ ansible_remote_user }}"
+    group: "{{ ansible_remote_user }}"
+  when: "'bastion' in group_names"
+  tags:
+    - monitoring
+
+
+- name: Clone kube prometheuse repo
+  ansible.builtin.git:
+    repo: "https://github.com/prometheus-operator/kube-prometheus"
+    dest: /home/{{ ansible_remote_user }}/cluster/kube-prometheus
+  when: "'bastion' in group_names"
+  tags:
+    - monitoring
+
+- name: Create setup manifest
+  ansible.builtin.command:
+    cmd: "kubectl create -f manifests/setup"
+    chdir: "/home/{{ ansible_remote_user }}/cluster/kube-prometheus"
+  when: "'bastion' in group_names"
+  tags:
+    - monitoring
+
+- name: Create manifests
+  ansible.builtin.command:
+    cmd: "kubectl create -f manifests"
+    chdir: "/home/{{ ansible_remote_user }}/cluster/kube-prometheus"
+  when: "'bastion' in group_names"
+  tags:
+    - monitoring

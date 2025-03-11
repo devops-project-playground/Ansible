@@ -347,7 +347,7 @@
   become: true
 
 - name: Kubeadm init
-  ansible.builtin.command: kubeadm init --control-plane-endpoint {{ ip_add }} --upload-certs --pod-network-cidr={{ k8s_subnet }}
+  ansible.builtin.command: kubeadm init --control-plane-endpoint {{ ip_add }} --upload-certs --pod-network-cidr={{ k8s_subnet }} --apiserver-cert-extra-sans {{ vip }}
   register: init_std
   args:
     creates: "/etc/kubernetes/admin.conf"
@@ -359,6 +359,9 @@
   tags: 
     - kubeadm
     
+#####################################################################
+# Copy config for Bastion host 
+#####################################################################
 - name: fetch from first cp
   ansible.builtin.fetch:
     src: /etc/kubernetes/admin.conf
@@ -397,6 +400,13 @@
     enabled: true
   become: true
   tags: kubeadm
+
+- name: Rollout CoreDNS  #Prevent wrong subnet for coredns pods
+  ansible.builtin.command:
+    cmd: "kubectl rollout restart -n kube-system deployment/coredns"
+  when: "'bastion' in group_names"
+  tags:
+    - sync
 
 - name: Join control-plane nodes to the cluster
   ansible.builtin.command: "{{cp_join_command}} "
@@ -461,3 +471,21 @@
     name: kube_vip
   tags:
     - kube_vip
+
+- name: Add storage provisioner
+  ansible.builtin.command:
+    cmd: "kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml"
+  when: "'bastion' in group_names"
+  tags:
+    - storage
+    - k8s
+
+- name: Set default storage class
+  ansible.builtin.command:
+    cmd: "kubectl patch storageclass local-path -p '{\"metadata\": {\"annotations\":{\"storageclass.kubernetes.io/is-default-class\":\"true\"}}}'"
+  when: "'bastion' in group_names"
+  tags:
+    - storage
+    - k8s
+
+

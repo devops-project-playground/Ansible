@@ -6,6 +6,7 @@
     - podman
     - k8s
     - k9s
+    - kube-prometheus
   vars:
     ansible_remote_user: "{{ new_admin }}"
     ansible_become_pass: "{{ admin_pwd }}"

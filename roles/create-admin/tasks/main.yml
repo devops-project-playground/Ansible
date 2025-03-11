@@ -38,3 +38,11 @@
   tags:
     - user
 
+- name: Add alias to bashrc
+  ansible.builtin.lineinfile:
+    path: /home/{{ ansible_remote_user }}/.bashrc
+    line: "alias k='kubectl'"
+  when: "'bastion' in group_names"
+  tags:
+    - alias
+
