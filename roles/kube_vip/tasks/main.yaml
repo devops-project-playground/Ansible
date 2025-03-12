@@ -6,7 +6,14 @@
       - curl
     state: present
   become: true
-  when: "'first_cp' in group_names"
+  when: "'bastion' in group_names"
+  tags:
+    - kube_vip
+
+- name: Apply RBAC settings
+  ansible.builtin.command:
+    cmd: "kubectl apply -f https://kube-vip.io/manifests/rbac.yaml"
+  when: "'bastion' in group_names"
   tags:
     - kube_vip
 
@@ -14,14 +21,14 @@
   ansible.builtin.shell:
     cmd: " curl -sL https://api.github.com/repos/kube-vip/kube-vip/releases | jq -r '.[0].name' "
   register: kube_vip_version_output
-  when: "'first_cp' in group_names"
+  when: "'bastion' in group_names"
   tags:
     - kube_vip
   
 - name: Set Kube VIP version
   ansible.builtin.set_fact:
     kube_vip_version: "{{ kube_vip_version_output.stdout }}"
-  when: "'first_cp' in group_names"
+  when: "'bastion' in group_names"
   tags:
     - kube_vip
 
@@ -40,7 +47,7 @@
           --arp \
           --leaderElection "
   register: kube_vip_manifest
-  when: "'first_cp' in group_names"
+  when: "'bastion' in group_names"
   tags:
     - kube_vip
 
@@ -49,15 +56,15 @@
     content: "{{ kube_vip_manifest.stdout }}"
     dest: "/home/{{ ansible_remote_user }}/kube-vip.yaml"
     mode: '0644'
-  when: "'first_cp' in group_names"
+  when: "'bastion' in group_names"
   tags:
     - kube_vip
 
 - name: Apply Kube VIP manifest
   ansible.builtin.command:
-    cmd: "kubectl apply -f kube-vip.yaml"
+    cmd: "kubectl apply -f kube-vip.yaml "
     chdir: "/home/{{ ansible_remote_user }}/"
-  when: "'first_cp' in group_names"
+  when: "'bastion' in group_names"
   tags:
     - kube_vip
 
