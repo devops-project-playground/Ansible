@@ -3,15 +3,7 @@
   ansible.builtin.file:
     path:  "{{ run_dir }}"
     state: directory
-    #TODO dep
-    #Debian based OS (Debian, Ubuntu, Linux Mint)
-    #
-    #    liblttng-ust1 or liblttng-ust0
-    #    libkrb5-3
-    #    zlib1g
-    #    libssl1.1, libssl1.0.2 or libssl1.0.0
-    #    libicu63, libicu60, libicu57 or libicu55
-
+    
 - name: Define architecture mapping
   ansible.builtin.set_fact:
     arch_mapping:
@@ -37,20 +29,25 @@
         | map(attribute='browser_download_url') | list | first
       }}
 
-#TODO fix 
+- name: Set regex
+  ansible.builtin.set_fact:
+    regex: "linux-{{ arch }} -->([A-Za-z0-9]*?)<!--" 
+
+- name: Extract relative checksum
+  ansible.builtin.set_fact:
+    checksum: "{{ github_releases.json.body | regex_search(regex, '\\1', multiline=True) }}"
+    
 - name: Download the latest runner package
   ansible.builtin.get_url:
     url: "{{ runner_download_url }}"
     dest: "{{run_dir}}/actions-runner-linux-{{ arch }}.tar.gz"
-    # owner: "{{ ansible_remote_user }}"
     mode: "0774"
-    #checksum: sha256:{{ checksum }}
+    checksum: sha256:{{ checksum }}
  
 - name: Extract the installer
   ansible.builtin.unarchive:
     src: "{{run_dir}}/actions-runner-linux-{{ arch }}.tar.gz"
     dest: "{{ run_dir }}"
-    #owner: "{{ ansible_remote_user }}"
     remote_src: yes
 
 #TODO add task to got register TOKEN
