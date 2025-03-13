@@ -1,4 +1,4 @@
 .env
-secret*
+*secret*
 group_vars*
 roles/access-config/files*

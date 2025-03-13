@@ -2,17 +2,44 @@
 - name: "Setup new Server (admin / ssh)"
   hosts: new
   become: true
+  gather_facts: no
 
+  pre_tasks:
+    - name: Set unique hostname for each node
+      ansible.builtin.hostname:
+        name: "node{{ ansible_play_hosts.index(inventory_hostname) + 1 }}"
+      vars:
+        ansible_ssh_user: "{{ default_admin }}"
+        ansible_ssh_pass: "{{ default_pass }}"
+        ansible_become_pass: "{{ default_pass }}"
+
+    - name: Update /etc/hosts with new hostname
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127.0.1.1'
+        line: "127.0.1.1 node{{ ansible_play_hosts.index(inventory_hostname) + 1 }}"
+      vars:
+        ansible_ssh_user: "{{ default_admin }}"
+        ansible_ssh_pass: "{{ default_pass }}"
+        ansible_become_pass: "{{ default_pass }}"
+      
   roles:
   - role: update
     remote_user: "{{ default_admin }}"
-  - role: set-admin
+    vars: 
+      ansible_ssh_pass: "{{ default_pass }}"
+      ansible_become_pass: "{{ default_pass }}"
+  - role: create-admin
     remote_user: "{{ default_admin }}"
     vars: 
-     ansible_become_pass: "{{ admin_pwd }}"
-  - role: access-config
+      ansible_ssh_pass: "{{ default_pass }}"
+      ansible_become_pass: "{{ default_pass }}"
+  - role: delete-default-admin
     remote_user: "{{ new_admin }}"
     vars: 
       ansible_become_pass: "{{ admin_pwd }}"
-    tags:
-      - access
+  - role: access-config
+    remote_user: "{{ new_admin }}"
+    vars: 
+      ansible_become_pass: "{{ admin_pwd }}"  
+

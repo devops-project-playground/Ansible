@@ -1,0 +1,64 @@
+---
+- name: install wireguard
+  ansible.builtin.apt:
+    name: wireguard
+    state: present
+  become: true
+
+- name: Generate privatekey
+  ansible.builtin.shell: "wg genkey > /home/$USER/private"
+  args:
+    creates: "/home/$USER/private"
+  no_log: true
+
+- name: Change private permission
+  ansible.builtin.file:
+    path: "/home/{{ansible_user}}/private"
+    owner: "root"
+    group: "root"
+    mode: '700'
+  become: true
+
+- name: Generate publickey
+  ansible.builtin.shell: "wg pubkey < /home/{{ansible_user}}/private > /home/{{ansible_user}}/publickey"
+  args:
+    creates: "/home/{{ansible_user}}/publickey"
+  become: true
+
+- name: Create new interface
+  ansible.builtin.command:
+    cmd: "ip link add dev wg0 type wireguard"
+    creates: /etc/wireguard/wg0.conf
+  when: ansible_facts['interfaces'] | select('search', 'wg0') | list | length == 0
+  become: true
+
+- name: Set ip address
+  ansible.builtin.command:
+    cmd: "ip addr add 10.0.0.20/24 dev wg0"
+  when: ansible_facts['interfaces'] | select('search', 'wg0') | list | length == 0
+  become: true
+
+- name: Set private-key
+  ansible.builtin.command:
+    cmd: "wg set wg0 private-key ./private"
+  when: ansible_facts['interfaces'] | select('search', 'wg0') | list | length == 0
+  become: true
+
+- name: Link interface
+  ansible.builtin.command:
+    cmd: "ip link set wg0 up"
+  when: ansible_facts['interfaces'] | select('search', 'wg0') | list | length == 0
+  become: true
+
+- name: Set peer
+  ansible.builtin.command:
+    cmd: "wg set wg0 peer {{ vpn_host_pubkey }} allowed-ips {{ vpn_host_ip }} " 
+  become: true
+
+- name: Copy remote publickey
+  ansible.builtin.fetch:
+    src: "/home/{{ansible_user}}/publickey"
+    dest: .
+
+
+    

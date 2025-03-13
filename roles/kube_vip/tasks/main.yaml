@@ -1,0 +1,70 @@
+---
+- name: Necessary package
+  ansible.builtin.apt:
+    pkg: 
+      - jq
+      - curl
+    state: present
+  become: true
+  when: "'bastion' in group_names"
+  tags:
+    - kube_vip
+
+- name: Apply RBAC settings
+  ansible.builtin.command:
+    cmd: "kubectl apply -f https://kube-vip.io/manifests/rbac.yaml"
+  when: "'bastion' in group_names"
+  tags:
+    - kube_vip
+
+- name: Get last Kube VIP version
+  ansible.builtin.shell:
+    cmd: " curl -sL https://api.github.com/repos/kube-vip/kube-vip/releases | jq -r '.[0].name' "
+  register: kube_vip_version_output
+  when: "'bastion' in group_names"
+  tags:
+    - kube_vip
+  
+- name: Set Kube VIP version
+  ansible.builtin.set_fact:
+    kube_vip_version: "{{ kube_vip_version_output.stdout }}"
+  when: "'bastion' in group_names"
+  tags:
+    - kube_vip
+
+- name: Create Kube VIP manifest
+  ansible.builtin.command:
+    cmd: "podman run --rm \
+          --network host \
+          ghcr.io/kube-vip/kube-vip:{{ kube_vip_version }} \
+          manifest daemonset \
+          --interface {{ ansible_default_ipv4.interface }} \
+          --address {{ vip }} \
+          --inCluster \
+          --taint \
+          --controlplane \
+          --services \
+          --arp \
+          --leaderElection "
+  register: kube_vip_manifest
+  when: "'bastion' in group_names"
+  tags:
+    - kube_vip
+
+- name: Save Kube VIP manifest to file
+  ansible.builtin.copy:
+    content: "{{ kube_vip_manifest.stdout }}"
+    dest: "/home/{{ ansible_remote_user }}/kube-vip.yaml"
+    mode: '0644'
+  when: "'bastion' in group_names"
+  tags:
+    - kube_vip
+
+- name: Apply Kube VIP manifest
+  ansible.builtin.command:
+    cmd: "kubectl apply -f kube-vip.yaml "
+    chdir: "/home/{{ ansible_remote_user }}/"
+  when: "'bastion' in group_names"
+  tags:
+    - kube_vip
+

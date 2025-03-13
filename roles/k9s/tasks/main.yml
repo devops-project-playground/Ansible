@@ -1,0 +1,65 @@
+
+---
+- name: Create k9s directory
+  ansible.builtin.file:
+    path: /home/{{ ansible_remote_user }}/k9s
+    state: directory
+  when: "'bastion' in group_names"
+  tags:
+    - k9s
+
+- name: Clone K9S repository
+  ansible.builtin.git:
+    repo: "https://github.com/derailed/k9s"
+    dest: /home/{{ ansible_remote_user }}/k9s
+    clone: yes
+  when: "'bastion' in group_names"
+  tags:
+    - k9s
+
+- name: Checkout to last k9s version
+  ansible.builtin.shell:
+    cmd: git checkout $(git tag -l | sort -V | tail -n 1)
+    chdir: /home/{{ ansible_remote_user }}/k9s
+  when: "'bastion' in group_names"
+  tags:
+    - k9s
+
+- name: Assure Make is present
+  ansible.builtin.apt:
+    name: make
+    state: present
+  become: true
+
+- name: Build K9S
+  ansible.builtin.shell:
+    chdir: "/home/{{ ansible_remote_user }}/k9s"
+    cmd: /bin/bash -c "make build"
+    creates: /home/{{ ansible_remote_user }}/k9s/execs
+  when: "'bastion' in group_names"
+  tags:
+    - k9s
+
+- name: Create symlink in for k9s in /usr/local/bin
+  ansible.builtin.file:
+    src: /home/{{ ansible_remote_user }}/k9s/execs/k9s
+    dest: /usr/local/bin/k9s
+    state: link
+    owner: "{{ ansible_remote_user }}"
+    group: "{{ ansible_remote_user }}"
+  become: true
+  when: "'bastion' in group_names"
+  tags:
+    - k9s
+
+- name: Set XTERM for all users
+  ansible.builtin.lineinfile:
+    path: "/etc/profile"
+    line: "export TERM=xterm-256color"
+    create: yes
+    state: present
+  become: true 
+  when: "'bastion' in group_names"
+  tags:
+    - k9s 
+

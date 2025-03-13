@@ -9,14 +9,17 @@
   tags:
     - ssh
 
-
 - name: restart ssh.service
   ansible.builtin.service:
     name: ssh
     state: reloaded
-
-    tags:
+  tags:
     - ssh
+
+- name: Make sure iptable is present
+  ansible.builtin.apt:
+    name: iptables
+    state: present
 
 - name: Allow related and established connections
   ansible.builtin.iptables:
@@ -45,3 +48,8 @@
     policy: DROP
   tags:
     - iptable
+
+- name: Remove ufw
+  ansible.builtin.apt:
+    name: ufw
+    state: absent

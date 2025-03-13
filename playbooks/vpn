@@ -1,0 +1,5 @@
+---
+- name: VPN setup
+  hosts: control_plane
+  roles:
+    - vpn

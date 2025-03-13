@@ -1,13 +1,25 @@
 ---
+- name: Get admin groups
+  ansible.builtin.shell:
+    cmd: 'id -Gn $(whoami) | tr " " "," | sed "s/$(whoami),//"'
+  register: adm_groups
+  become: no
+
+- name: Convert groups to list
+  ansible.builtin.set_fact:
+    groups_list: "{{ adm_groups.stdout_lines }}"
+
 - name: User creation
   ansible.builtin.user:
     name: "{{ new_admin }}"
     create_home: yes
     shell: /bin/bash
-    groups: admin,sudo
+    groups: "{{groups_list}}"
     append: yes
     state: present
     password: "{{admin_pwd | password_hash('sha512')}}"
+  vars:
+    groups_list: groups_list
   tags:
     - user
 
@@ -26,10 +38,11 @@
   tags:
     - user
 
-- name: Remove default admin
-  ansible.builtin.user:
-    name: "{{ default_admin }}"
-    state: absent
-    force: true
-  become: true
-  remote_user: "{{new_admin}}"
+- name: Add alias to bashrc
+  ansible.builtin.lineinfile:
+    path: /home/{{ ansible_remote_user }}/.bashrc
+    line: "alias k='kubectl'"
+  when: "'bastion' in group_names"
+  tags:
+    - alias
+

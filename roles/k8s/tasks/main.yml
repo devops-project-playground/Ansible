@@ -1,0 +1,489 @@
+---
+- name: Install needed packages (K8S and CRI-O)
+  ansible.builtin.apt:
+    pkg:
+      - apt-transport-https
+      - software-properties-common
+      - ca-certificates
+      - curl
+      - gpg
+      - make
+  become: true
+
+- name: Define architecture mapping
+  ansible.builtin.set_fact:
+    arch_mapping:
+      x86_64: "amd64"
+      aarch64: "arm64"
+      arm64: "arm64"
+
+- name: Def architecture
+  ansible.builtin.set_fact:
+    go_arch: "{{ arch_mapping[ansible_architecture]}}"
+    
+- name: Download Golang tar #Needed for Helm and CNI plugins
+  ansible.builtin.get_url:
+    url: "https://go.dev/dl/go1.23.6.linux-{{ go_arch }}.tar.gz"
+    dest: /home/{{ ansible_remote_user }}/go1.23.6.linux-{{ go_arch }}.tar.gz
+    mode: 770
+  tags:
+    - bastion
+
+- name: Install Golang
+  ansible.builtin.shell:
+    cmd: "rm -rf /usr/local/go && tar -C /usr/local -xzf go1.23.6.linux-{{ go_arch }}.tar.gz"
+    creates: /usr/local/go
+  become: true
+  tags:
+    - bastion
+   
+- name: Ensure /go/bin is in PATH
+  ansible.builtin.lineinfile:
+    path: /etc/profile
+    line: 'export PATH="/usr/local/go/bin:$PATH"'
+    create: yes
+    state: present
+  become: true
+  tags:
+    - bastion
+
+- name: Create symlink in for go in /usr/local/bin
+  ansible.builtin.file:
+    src: /usr/local/go/bin/go
+    dest: /usr/local/bin/go
+    state: link
+    owner: "{{ ansible_remote_user }}"
+    group: "{{ ansible_remote_user }}"
+  become: true
+  tags:
+    - bastion
+
+- name: Create Helm directory
+  ansible.builtin.file:
+    path: /home/{{ ansible_remote_user }}/helm
+    state: directory
+  when: "'bastion' in group_names"
+  tags:
+    - bastion
+
+- name: Clone Helm repo
+  ansible.builtin.git:
+    repo: "https://github.com/helm/helm.git"
+    dest: /home/{{ ansible_remote_user }}/helm
+    clone: yes
+  when: "'bastion' in group_names"
+  tags:
+    - bastion
+
+- name: Make Helm
+  ansible.builtin.command:
+    cmd: make
+    chdir: "/home/{{ ansible_remote_user }}/helm" 
+    creates: "/home/{{ ansible_remote_user }}/helm/bin"
+  when: "'bastion' in group_names"
+  tags:
+    - bastion
+
+- name: Create symlink in for Helm in /usr/local/bin
+  ansible.builtin.file:
+    src: /home/{{ ansible_remote_user }}/helm/bin/helm
+    dest: /usr/local/bin/helm
+    state: link
+    owner: "{{ ansible_remote_user }}"
+    group: "{{ ansible_remote_user }}"
+  become: true
+  when: "'bastion' in group_names"
+  tags:
+    - bastion
+
+- name: Download public signing key K8S
+  ansible.builtin.shell:
+    cmd: "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg"
+    creates: "/etc/apt/keyrings/kubernetes-apt-keyring.gpg"
+  become: true
+
+
+- name: Add repository K8S 
+  ansible.builtin.lineinfile:
+    path: "/etc/apt/sources.list.d/kubernetes.list"
+    line: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /"
+    create: yes
+  become: true
+  
+- name: Download public signing key CRI-O
+  ansible.builtin.shell:
+    cmd: "curl -fsSL https://pkgs.k8s.io/addons:/cri-o:/stable:/v1.32/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg"
+    creates: "/etc/apt/keyrings/cri-o-apt-keyring.gpg"
+  become: true
+  tags:
+    - crio
+
+- name: Add repository CRI-O
+  ansible.builtin.lineinfile:
+    path: "/etc/apt/sources.list.d/cri-o.list"
+    line: "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://pkgs.k8s.io/addons:/cri-o:/stable:/v1.32/deb/ /"
+    create: yes
+  become: true
+  tags:
+    - crio
+
+- name: Update repository
+  ansible.builtin.apt:
+    update_cache: true
+  become: true
+  tags:
+    - crio
+
+- name: Install kubelet on every node
+  ansible.builtin.apt:
+    name: kubelet
+    state: present
+  become: true
+
+- name: Install CRI-O packages
+  ansible.builtin.apt:
+    name: "cri-o"
+    state: present
+  become: true
+
+# PATH MIGHT CHANGE IN THE FUTUR !!!
+- name: Set Cgroup to cgroupf
+  ansible.builtin.blockinfile:
+    path: /etc/crio/crio.conf.d/10-crio.conf
+    insertafter: "^\\[crio.runtime\\]\\n"
+    block: |
+      conmon_cgroup = "pod"
+      cgroup_manager = "cgroupfs"
+  become: true
+  notify:
+    - Start and Enable CRI-O service
+
+- name: Ensure service is running
+  ansible.builtin.meta: flush_handlers
+
+- name: Hold kubelet
+  ansible.builtin.dpkg_selections:
+    name: kubelet
+    selection: hold
+  become: true
+
+- name: Install kubectl 
+  ansible.builtin.apt:
+    pkg:
+      - kubectl
+    state: present
+  when: "'bastion' in group_names or 'first_cp' in group_names"
+  become: true
+
+- name: Hold kubectl
+  ansible.builtin.dpkg_selections:
+    name: kubectl
+    selection: hold
+  when: "'bastion' in group_names or 'first_cp' in group_names"
+  become: true
+
+- name: Install kubeadm
+  ansible.builtin.apt:
+    pkg:
+      - kubeadm
+    state: present
+  become: true
+      
+- name: Hold kubeadm
+  ansible.builtin.dpkg_selections:
+    name: kubeadm
+    selection: hold
+  become: true
+
+  # Handle ports for control plane : 6443 / 2379-2380 / 10250 / 10259 / 10257
+- name: Allow connections on ports Control
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: tcp
+    source: "{{ subnet }}"
+    action: insert
+    destination_ports:
+      - "6443"
+      - "2379:2380"
+      - "10250"
+      - "10259"
+      - "10256"
+      - "10257"
+      - "10251"
+      - "8080"
+      - "179" # Calico
+    jump: ACCEPT
+    state: present
+  when: "'control_plane' in group_names"
+  become: true
+  tags:
+    - ports
+
+- name: Allow connections on ports for Bastion
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: tcp
+    action: insert
+    destination_ports:
+      - "6443"
+    jump: ACCEPT
+    state: present
+  when: "'bastion' in group_names"
+  become: true
+  tags:
+    - ports
+    
+- name: Allow connection UDP for Calico
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: udp
+    source: "{{subnet}}"
+    action: insert
+    destination_ports:
+      - "4789"
+    jump: ACCEPT
+    state: present
+  become: true
+  tags:
+    - ports
+
+- name: Allow localhost traffic
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: all
+    source: 127.0.0.1
+    destination: 127.0.0.1
+    jump: ACCEPT
+  become: true
+  tags:
+  - iptable
+
+  # Handle ports for worker node(s): 10250 / 10256 / 30000-32767
+- name: Allow connections on ports NODES
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: tcp
+    source: "{{ subnet }}"
+    action: insert
+    destination_ports:
+      - "10250"
+      - "10256"
+      - "30000:32767"
+      - "8080"
+      - "179" #Calico
+    jump: ACCEPT
+    state: present
+  when: "'workers' in group_names"
+  become: true
+  tags:
+    - ports
+
+- name: Enable IP forwarding
+  ansible.builtin.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    state: present
+    reload: true
+  become: true
+
+- name: Insure git is present
+  ansible.builtin.apt:
+    name: git
+    state: present
+  become: true
+
+- name: Create CNI plugins dir
+  ansible.builtin.file:
+    path: /home/{{ ansible_remote_user }}/CNI-plugins
+    state: directory
+
+- name: Clone CNI plugins repo
+  ansible.builtin.git:
+    repo: "https://github.com/containernetworking/plugins"
+    dest: /home/{{ ansible_remote_user }}/CNI-plugins
+    clone: yes
+
+- name: Checkout to last version
+  ansible.builtin.shell:
+    cmd: git checkout $(git tag -l | sort -V | tail -n 1)
+    chdir: /home/{{ ansible_remote_user }}/CNI-plugins
+
+- name: Build CNI plugins
+  ansible.builtin.shell:
+    chdir: "/home/{{ ansible_remote_user }}/CNI-plugins"
+    cmd: /bin/bash -c "./build_linux.sh"
+    creates: /home/{{ ansible_remote_user }}/CNI-plugins/bin/bridge
+
+- name: Create CNI bin directory
+  ansible.builtin.file:
+    path: /opt/cni/bin
+    state: directory
+  become: true
+
+- name: Stop CRI-O and Kubelet
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: stopped
+  with_items:
+    - crio
+    - kubelet
+  become: true
+
+- name: Copy CNI plugins binaries 
+  ansible.builtin.copy:
+    src: /home/{{ ansible_remote_user }}/CNI-plugins/bin/
+    remote_src: true
+    dest: /opt/cni/bin/
+  become: true
+  throttle: 3
+
+- name: Start CRI-O and Kubelet
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: started
+  with_items:
+    - crio
+    - kubelet
+  become: true
+
+- name: Kubeadm init
+  ansible.builtin.command: kubeadm init --control-plane-endpoint {{ ip_add }} --upload-certs --pod-network-cidr={{ k8s_subnet }} --apiserver-cert-extra-sans {{ vip }}
+  register: init_std
+  args:
+    creates: "/etc/kubernetes/admin.conf"
+  vars:
+    ip_add: "{{hostvars[groups['first_cp'][0]].ansible_default_ipv4.address}}"
+  run_once: true
+  delegate_to: "{{ groups['first_cp'][0] }}"
+  become: true
+  tags: 
+    - kubeadm
+    
+#####################################################################
+# Copy config for Bastion host 
+#####################################################################
+- name: fetch from first cp
+  ansible.builtin.fetch:
+    src: /etc/kubernetes/admin.conf
+    dest: config
+    flat: yes
+  when: "'first_cp' in group_names"
+  become: true
+  tags:
+    - sync      
+    
+- name: Create .kube dir
+  ansible.builtin.file:
+    path: /home/{{ ansible_remote_user }}/.kube
+    state: directory
+  when: "'bastion' in group_names" 
+  become: true
+  tags: 
+    - kubeadm
+    - sync
+ 
+- name: Copy config
+  ansible.builtin.copy:
+    src: ./config
+    dest: /home/{{ ansible_remote_user }}/.kube/config
+    owner: "{{ ansible_remote_user }}"
+    group: "{{ ansible_remote_user }}"
+  when: "'bastion' in group_names"
+  become: true
+  tags:
+    - sync
+
+- name: Enable and Start kubelet
+  ansible.builtin.systemd_service:
+    name: kubelet
+    state: started
+    enabled: true
+  become: true
+  tags: kubeadm
+
+- name: Rollout CoreDNS  #Prevent wrong subnet for coredns pods
+  ansible.builtin.command:
+    cmd: "kubectl rollout restart -n kube-system deployment/coredns"
+  when: "'bastion' in group_names"
+  tags:
+    - sync
+
+- name: Join control-plane nodes to the cluster
+  ansible.builtin.command: "{{cp_join_command}} "
+  vars:
+    cp_join_command: "{{ init_std.stdout 
+        | regex_search('kubeadm join(?:.*\\n){2}.*--control-plane.*[A-Za-z0-9]{64}', multiline=True) 
+        | regex_replace('\\\\', '')  
+        | regex_replace('\\s+', ' ')}}"
+  args:
+    creates: /etc/kubernetes/kubelet.conf
+  throttle: 1
+  when: "'control_plane' in group_names"
+  become: true
+  tags: 
+    - kubeadm
+
+- name: Get Worker join token
+  ansible.builtin.command: kubeadm token create --print-join-command
+  register: join_command
+  changed_when: false
+  run_once: true
+  delegate_to: "{{ groups['first_cp'][0] }}"
+  become: true
+  tags: kubeadm
+
+- name: Join worker nodes to the cluster
+  ansible.builtin.command: "{{ join_command.stdout }}"
+  args:
+    creates: /etc/kubernetes/kubelet.conf
+  when: "'workers' in group_names"
+  become: true
+  tags: kubeadm
+
+- name: Deploy Calico
+  ansible.builtin.command:
+    cmd: "kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.29.2/manifests/calico.yaml "
+  when: "'bastion' in group_names"
+  tags:
+    - Helm
+    - CNI
+    
+- name: Wait for all control-plane nodes to be ready
+  ansible.builtin.command:
+    cmd: "kubectl wait --for=condition=Ready node --all --timeout=300s"
+  when: "'bastion' in group_names"
+  register: cp_ready
+  retries: 10
+  delay: 10
+  until: cp_ready.rc == 0
+  tags:
+    - kubeadm
+  
+- name: Deploy Nginx Ingress-Controller
+  ansible.builtin.shell:
+    cmd: "kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.12.0/deploy/static/provider/baremetal/deploy.yaml"
+  when: "'bastion' in group_names"
+  tags:
+    - ingress
+
+- name: Execute Kube_Vip role
+  ansible.builtin.include_role:
+    name: kube_vip
+  tags:
+    - kube_vip
+
+- name: Add storage provisioner
+  ansible.builtin.command:
+    cmd: "kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml"
+  when: "'bastion' in group_names"
+  tags:
+    - storage
+    - k8s
+
+- name: Set default storage class
+  ansible.builtin.command:
+    cmd: "kubectl patch storageclass local-path -p '{\"metadata\": {\"annotations\":{\"storageclass.kubernetes.io/is-default-class\":\"true\"}}}'"
+  when: "'bastion' in group_names"
+  tags:
+    - storage
+    - k8s
