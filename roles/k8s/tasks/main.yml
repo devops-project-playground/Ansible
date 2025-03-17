@@ -8,6 +8,7 @@
       - curl
       - gpg
       - make
+      - git
   become: true
 
 - name: Define architecture mapping
@@ -286,12 +287,6 @@
     reload: true
   become: true
 
-- name: Insure git is present
-  ansible.builtin.apt:
-    name: git
-    state: present
-  become: true
-
 - name: Create CNI plugins dir
   ansible.builtin.file:
     path: /home/{{ ansible_remote_user }}/CNI-plugins
@@ -401,13 +396,6 @@
   become: true
   tags: kubeadm
 
-- name: Rollout CoreDNS  #Prevent wrong subnet for coredns pods
-  ansible.builtin.command:
-    cmd: "kubectl rollout restart -n kube-system deployment/coredns"
-  when: "'bastion' in group_names"
-  tags:
-    - sync
-
 - name: Join control-plane nodes to the cluster
   ansible.builtin.command: "{{cp_join_command}} "
   vars:
@@ -439,6 +427,13 @@
   when: "'workers' in group_names"
   become: true
   tags: kubeadm
+
+- name: Rollout CoreDNS  #Prevent wrong subnet for coredns pods
+  ansible.builtin.command:
+    cmd: "kubectl rollout restart -n kube-system deployment/coredns"
+  when: "'bastion' in group_names"
+  tags:
+    - sync
 
 - name: Deploy Calico
   ansible.builtin.command:

@@ -1,8 +1,9 @@
 ---
 - name: "Create self-hosted GitHub runners"
-  hosts: runners
+  hosts: workers
   become: true
   vars:
     run_dir: '{{ "runner/"+(url | regex_replace(".*/", "")) }}'
+    ansible_become_pass: "{{ admin_pwd }}"
   roles:
   - runner

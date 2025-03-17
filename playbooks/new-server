@@ -5,6 +5,30 @@
   gather_facts: no
 
   pre_tasks:
+    - name: Setup DNS
+      ansible.builtin.blockinfile:
+        path: /etc/systemd/resolved.conf
+        block: |
+            DNS=8.8.8.8 1.1.1.1
+            FallbackDNS=8.8.4.4 1.0.0.1
+            DNSStubListener=no
+      become: true
+      vars:
+        ansible_ssh_user: "{{ default_admin }}"
+        ansible_ssh_pass: "{{ default_pass }}"
+        ansible_become_pass: "{{ default_pass }}"
+
+    - name: Restart systemd-resolved
+      ansible.builtin.service:
+        name: systemd-resolved
+        state: restarted
+      become: true
+      vars:
+        ansible_ssh_user: "{{ default_admin }}"
+        ansible_ssh_pass: "{{ default_pass }}"
+        ansible_become_pass: "{{ default_pass }}"
+
+
     - name: Set unique hostname for each node
       ansible.builtin.hostname:
         name: "node{{ ansible_play_hosts.index(inventory_hostname) + 1 }}"
