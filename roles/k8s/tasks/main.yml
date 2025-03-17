@@ -388,6 +388,13 @@
   tags:
     - sync
 
+- name: Remove config file from host
+  ansible.builtin.file:
+    path: "playbooks/config"
+    state: absent
+  delegate_to: localhost
+  run_once: true
+
 - name: Enable and Start kubelet
   ansible.builtin.systemd_service:
     name: kubelet
