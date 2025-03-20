@@ -66,4 +66,10 @@
     remote_user: "{{ new_admin }}"
     vars: 
       ansible_become_pass: "{{ admin_pwd }}"  
+  - role: builders
+    remote_user: "{{ new_admin }}"
+    vars: 
+      ansible_become_pass: "{{ admin_pwd }}"  
+
+
 

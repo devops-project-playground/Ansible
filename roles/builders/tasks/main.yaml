@@ -1,0 +1,12 @@
+---
+- name: Ensure nodejs is present 
+  ansible.builtin.apt:
+    pkg: 
+      - nodejs
+      - npm
+    state: present
+  when: "'workers' in group_names"
+  become: true
+  tags:
+    - builder
+
